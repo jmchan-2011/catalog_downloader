@@ -1,8 +1,8 @@
 """
 Roblox Avatar Asset Downloader & OBJ Converter
 ────────────────────────────────────────────────
-Requirements:  pip install requests lz4
-Usage:         python roblox_asset_downloader.py
+Requirements:  pip3 install requests lz4
+Usage:         python3 roblox_asset_downloader.py
 """
 
 import os
@@ -71,38 +71,25 @@ SORT_ORDERS = [0, 4, 5]
 
 PRICE_SLICES = [
     ("Free",         0,    0),
-    ("1–10",         1,   10),
-    ("11–50",       11,   50),
-    ("51–75",       51,   75),
-    ("76–100",      76,  100),
-    ("101–125",    101,  125),
-    ("126–150",    126,  150),
-    ("151–175",    151,  175),
-    ("176–200",    176,  200),
-    ("201–250",    201,  250),
-    ("251–300",    251,  300),
-    ("301–350",    301,  350),
-    ("351–400",    351,  400),
-    ("401–500",    401,  500),
-    ("501–750",    501,  750),
-    ("751–1000",   751, 1000),
-    ("1001–2000", 1001, 2000),
-    ("2001–5000", 2001, 5000),
+    ("1-10",         1,   10),
+    ("11-50",       11,   50),
+    ("51-75",       51,   75),
+    ("76-100",      76,  100),
+    ("101-125",    101,  125),
+    ("126-150",    126,  150),
+    ("151-175",    151,  175),
+    ("176-200",    176,  200),
+    ("201-250",    201,  250),
+    ("251-300",    251,  300),
+    ("301-350",    301,  350),
+    ("351-400",    351,  400),
+    ("401-500",    401,  500),
+    ("501-750",    501,  750),
+    ("751-1000",   751, 1000),
+    ("1001-2000", 1001, 2000),
+    ("2001-5000", 2001, 5000),
     ("5001+",     5001, None),
 ]
-
-# ── Rolimons asset type IDs ────────────────────────────────────
-# These map to Roblox asset type IDs for filtering
-ROLIMONS_ASSET_TYPES = {
-    8:  "Hat",
-    41: "Hair Accessory",
-    42: "Face Accessory",
-    43: "Neck Accessory",
-    44: "Shoulder Accessory",
-    45: "Front Accessory",
-    46: "Back Accessory",
-    47: "Waist Accessory",
-}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -117,7 +104,7 @@ BUNDLE_DETAILS_URL  = "https://catalog.roproxy.com/v1/bundles/{bundle_id}/detail
 USER_BUNDLES_URL    = "https://catalog.roproxy.com/v1/users/{user_id}/bundles"
 CATALOG_ITEM_URL    = "https://catalog.roproxy.com/v1/catalog/items/details"
 
-# Rolimons items API — returns all tracked items with asset type + offsale status
+# Rolimons items API
 ROLIMONS_ITEMS_URL  = "https://www.rolimons.com/itemapi/itemdetails"
 
 HEADERS = {
@@ -138,21 +125,21 @@ SESSION.headers.update(HEADERS)
 # PROGRESS
 # ═══════════════════════════════════════════════════════════════
 
-def load_progress() -> set[int]:
+def load_progress() -> set:
     if not os.path.exists(PROGRESS_FILE):
         return set()
     try:
         with open(PROGRESS_FILE, "r") as f:
             data = json.load(f)
         completed = set(data.get("completed", []))
-        print(f"[Resume] {len(completed)} assets already done — skipping those.")
+        print(f"[Resume] {len(completed)} assets already done - skipping those.")
         return completed
     except Exception as e:
-        print(f"[Resume] Could not read progress file: {e} — starting fresh")
+        print(f"[Resume] Could not read progress file: {e} - starting fresh")
         return set()
 
 
-def mark_done(asset_id: int, completed: set[int]):
+def mark_done(asset_id: int, completed: set):
     completed.add(asset_id)
     with open(PROGRESS_FILE, "w") as f:
         json.dump({"completed": sorted(completed)}, f)
@@ -162,7 +149,7 @@ def mark_done(asset_id: int, completed: set[int]):
 # CATALOG CACHE
 # ═══════════════════════════════════════════════════════════════
 
-def load_catalog_cache() -> list[dict] | None:
+def load_catalog_cache():
     if not os.path.exists(CATALOG_CACHE_FILE):
         return None
     try:
@@ -174,11 +161,11 @@ def load_catalog_cache() -> list[dict] | None:
         print(f"[Cache] Delete {CATALOG_CACHE_FILE} to force a fresh fetch.\n")
         return items
     except Exception as e:
-        print(f"[Cache] Could not read cache: {e} — re-fetching")
+        print(f"[Cache] Could not read cache: {e} - re-fetching")
         return None
 
 
-def save_catalog_cache(items: list[dict]):
+def save_catalog_cache(items: list):
     from datetime import datetime
     with open(CATALOG_CACHE_FILE, "w") as f:
         json.dump({
@@ -193,7 +180,7 @@ def save_catalog_cache(items: list[dict]):
 # OFFSALE CACHE
 # ═══════════════════════════════════════════════════════════════
 
-def load_offsale_cache() -> list[dict] | None:
+def load_offsale_cache():
     if not os.path.exists(OFFSALE_CACHE_FILE):
         return None
     try:
@@ -205,11 +192,11 @@ def load_offsale_cache() -> list[dict] | None:
         print(f"[Offsale Cache] Delete {OFFSALE_CACHE_FILE} to force a fresh fetch.\n")
         return items
     except Exception as e:
-        print(f"[Offsale Cache] Could not read: {e} — re-fetching")
+        print(f"[Offsale Cache] Could not read: {e} - re-fetching")
         return None
 
 
-def save_offsale_cache(items: list[dict]):
+def save_offsale_cache(items: list):
     from datetime import datetime
     with open(OFFSALE_CACHE_FILE, "w") as f:
         json.dump({
@@ -220,7 +207,7 @@ def save_offsale_cache(items: list[dict]):
     print(f"[Offsale Cache] Saved {len(items)} items to {OFFSALE_CACHE_FILE}\n")
 
 
-# ════════════════════════��══════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # UTILITIES
 # ═══════════════════════════════════════════════════════════════
 
@@ -233,18 +220,18 @@ def to_snake_case(name: str) -> str:
     return name.lower().strip("_")
 
 
-def safe_get(url: str, **kwargs) -> requests.Response | None:
+def safe_get(url: str, **kwargs):
     wait = SLEEP_ON_RATE_LIMIT
     for attempt in range(6):
         try:
             r = SESSION.get(url, timeout=30, **kwargs)
             if r.status_code == 429:
-                print(f"  [Rate limited] Waiting {wait}s … (attempt {attempt+1})")
+                print(f"  [Rate limited] Waiting {wait}s ... (attempt {attempt+1})")
                 time.sleep(wait)
                 wait = min(wait * 2, 300)
                 continue
             if r.status_code == 503:
-                print(f"  [503] Waiting 30s …")
+                print(f"  [503] Waiting 30s ...")
                 time.sleep(30)
                 continue
             return r
@@ -255,13 +242,13 @@ def safe_get(url: str, **kwargs) -> requests.Response | None:
     return None
 
 
-def safe_post(url: str, **kwargs) -> requests.Response | None:
+def safe_post(url: str, **kwargs):
     wait = SLEEP_ON_RATE_LIMIT
     for attempt in range(6):
         try:
             r = SESSION.post(url, timeout=30, **kwargs)
             if r.status_code == 429:
-                print(f"  [Rate limited] Waiting {wait}s … (attempt {attempt+1})")
+                print(f"  [Rate limited] Waiting {wait}s ... (attempt {attempt+1})")
                 time.sleep(wait)
                 wait = min(wait * 2, 300)
                 continue
@@ -273,47 +260,37 @@ def safe_post(url: str, **kwargs) -> requests.Response | None:
 
 
 # ═══════════════════════════════════════════════════════════════
-# MESH PARSING
+# MESH PARSING  (v1 fix included)
 # ═══════════════════════════════════════════════════════════════
 
 def _parse_mesh_v1(text: str):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     vertices, normals, uvs, faces = [], [], [], []
     try:
-        # v1.00 format:
-        # Line 0: "version 1.00"
-        # Line 1: num_faces  (just a plain integer)
-        # Line 2+: one face per line, 3 vertices each with 9 floats
-        #
-        # v1.01 format:
-        # Line 0: "version 1.01"
-        # Line 1: "2"          ← LOD count, skip this
-        # Line 2: num_faces
-        # Line 3+: face data
-
+        # v1.00:  Line 0 = version, Line 1 = face_count, Line 2+ = face data
+        # v1.01+: Line 0 = version, Line 1 = LOD count (skip),
+        #         Line 2 = face_count, Line 3+ = face data
         version_line = lines[0].lower()
-
         if "1.01" in version_line or "1.02" in version_line:
-            # Skip LOD count line, face count is next
             face_count = int(lines[2])
             face_start = 3
         else:
-            # v1.00 — face count is on line 1
             face_count = int(lines[1])
             face_start = 2
 
         for face_line in lines[face_start:face_start + face_count]:
             nums = re.findall(r"[-\d.e+]+", face_line)
-            if len(nums) < 27: continue
+            if len(nums) < 27:
+                continue
             fi_v, fi_n, fi_u = [], [], []
             for v in range(3):
                 b = v * 9
-                vx,vy,vz = float(nums[b]),   float(nums[b+1]), float(nums[b+2])
-                nx,ny,nz = float(nums[b+3]), float(nums[b+4]), float(nums[b+5])
-                u,tv     = float(nums[b+6]), float(nums[b+7])
-                vertices.append((vx,vy,vz)); fi_v.append(len(vertices))
-                normals.append((nx,ny,nz));  fi_n.append(len(normals))
-                uvs.append((u,tv));          fi_u.append(len(uvs))
+                vx, vy, vz = float(nums[b]),   float(nums[b+1]), float(nums[b+2])
+                nx, ny, nz = float(nums[b+3]), float(nums[b+4]), float(nums[b+5])
+                u,  tv     = float(nums[b+6]), float(nums[b+7])
+                vertices.append((vx, vy, vz)); fi_v.append(len(vertices))
+                normals.append((nx, ny, nz));  fi_n.append(len(normals))
+                uvs.append((u, tv));           fi_u.append(len(uvs))
             faces.append(list(zip(fi_v, fi_u, fi_n)))
     except (IndexError, ValueError) as e:
         print(f"    [mesh v1 error] {e}")
@@ -326,7 +303,8 @@ def _parse_mesh_binary(data: bytes):
         nl      = data.index(b"\n")
         header  = data[:nl].decode("utf-8", errors="ignore").strip()
         vm      = re.search(r"version\s+([\d.]+)", header, re.I)
-        if not vm: return vertices, normals, uvs, faces
+        if not vm:
+            return vertices, normals, uvs, faces
         version = vm.group(1)
         pos     = nl + 1
 
@@ -338,17 +316,19 @@ def _parse_mesh_binary(data: bytes):
             num_faces = struct.unpack_from("<I", data, pos+10)[0]
             vpos = pos + sz_header
             for i in range(num_verts):
-                base = vpos + i*sz_vertex
-                if base+28 > len(data): break
-                x,y,z    = struct.unpack_from("<fff", data, base)
-                nx,ny,nz = struct.unpack_from("<fff", data, base+12)
-                u,v      = struct.unpack_from("<ff",  data, base+24)
-                vertices.append((x,y,z)); normals.append((nx,ny,nz)); uvs.append((u,v))
-            fpos = vpos + num_verts*sz_vertex
+                base = vpos + i * sz_vertex
+                if base + 28 > len(data): break
+                x, y, z    = struct.unpack_from("<fff", data, base)
+                nx, ny, nz = struct.unpack_from("<fff", data, base+12)
+                u, v       = struct.unpack_from("<ff",  data, base+24)
+                vertices.append((x, y, z))
+                normals.append((nx, ny, nz))
+                uvs.append((u, v))
+            fpos = vpos + num_verts * sz_vertex
             for i in range(num_faces):
-                base = fpos + i*sz_face
-                if base+12 > len(data): break
-                a,b,c = struct.unpack_from("<III", data, base)
+                base = fpos + i * sz_face
+                if base + 12 > len(data): break
+                a, b, c = struct.unpack_from("<III", data, base)
                 faces.append([(a+1,a+1,a+1),(b+1,b+1,b+1),(c+1,c+1,c+1)])
 
         elif version.startswith(("3","4","5")):
@@ -359,17 +339,19 @@ def _parse_mesh_binary(data: bytes):
             sz_face   = 12
             vpos = pos + sz_header
             for i in range(num_verts):
-                base = vpos + i*sz_vertex
-                if base+28 > len(data): break
-                x,y,z    = struct.unpack_from("<fff", data, base)
-                nx,ny,nz = struct.unpack_from("<fff", data, base+12)
-                u,v      = struct.unpack_from("<ff",  data, base+24)
-                vertices.append((x,y,z)); normals.append((nx,ny,nz)); uvs.append((u,v))
-            fpos = vpos + num_verts*sz_vertex
+                base = vpos + i * sz_vertex
+                if base + 28 > len(data): break
+                x, y, z    = struct.unpack_from("<fff", data, base)
+                nx, ny, nz = struct.unpack_from("<fff", data, base+12)
+                u, v       = struct.unpack_from("<ff",  data, base+24)
+                vertices.append((x, y, z))
+                normals.append((nx, ny, nz))
+                uvs.append((u, v))
+            fpos = vpos + num_verts * sz_vertex
             for i in range(num_faces):
-                base = fpos + i*sz_face
-                if base+12 > len(data): break
-                a,b,c = struct.unpack_from("<III", data, base)
+                base = fpos + i * sz_face
+                if base + 12 > len(data): break
+                a, b, c = struct.unpack_from("<III", data, base)
                 faces.append([(a+1,a+1,a+1),(b+1,b+1,b+1),(c+1,c+1,c+1)])
     except Exception as e:
         print(f"    [mesh binary error] {e}")
@@ -378,7 +360,7 @@ def _parse_mesh_binary(data: bytes):
 
 def parse_roblox_mesh(raw: bytes):
     try:
-        header = raw[:20].decode("utf-8", errors="ignore").lower()
+        header = raw[:20].decode("utf-8", errors="ignore")
     except Exception:
         header = ""
     if "version 1" in header:
@@ -394,17 +376,17 @@ def write_obj(vertices, normals, uvs, faces, obj_path, mtl_name, tex_name):
     with open(obj_path, "w") as f:
         f.write("# Exported by roblox_asset_downloader.py\n")
         f.write(f"mtllib {mtl_name}\n\n")
-        for x,y,z in vertices:
+        for x, y, z in vertices:
             f.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
         f.write("\n")
-        for u,v in uvs:
+        for u, v in uvs:
             f.write(f"vt {u:.6f} {1.0-v:.6f}\n")
         f.write("\n")
-        for nx,ny,nz in normals:
+        for nx, ny, nz in normals:
             f.write(f"vn {nx:.6f} {ny:.6f} {nz:.6f}\n")
         f.write("\nusemtl material0\n")
         for face in faces:
-            f.write("f " + " ".join(f"{vi}/{uvi}/{ni}" for vi,uvi,ni in face) + "\n")
+            f.write("f " + " ".join(f"{vi}/{uvi}/{ni}" for vi, uvi, ni in face) + "\n")
 
 
 def write_mtl(mtl_path, texture_filename):
@@ -424,7 +406,7 @@ def write_mtl(mtl_path, texture_filename):
 # TEXTURE + MESH HELPERS
 # ═══════════════════════════════════════════════════════════════
 
-def get_asset_download_url(asset_id: int) -> str | None:
+def get_asset_download_url(asset_id: int):
     r = safe_get(ASSET_DELIVERY_URL.format(asset_id=asset_id))
     if r is None or not r.ok:
         return None
@@ -434,9 +416,11 @@ def get_asset_download_url(asset_id: int) -> str | None:
 
 def download_texture(texture_id: int, tex_path: str) -> bool:
     url = get_asset_download_url(texture_id)
-    if not url: return False
+    if not url:
+        return False
     r = safe_get(url)
-    if r is None or not r.ok: return False
+    if r is None or not r.ok:
+        return False
     ct = r.headers.get("content-type", "")
     if "image" in ct or r.content[:4] in (b"\x89PNG", b"\xff\xd8\xff"):
         with open(tex_path, "wb") as f:
@@ -445,8 +429,7 @@ def download_texture(texture_id: int, tex_path: str) -> bool:
     return False
 
 
-def save_mesh_to_folder(mesh_bytes: bytes, texture_id: int | None,
-                        folder: str, base_name: str) -> bool:
+def save_mesh_to_folder(mesh_bytes: bytes, texture_id, folder: str, base_name: str) -> bool:
     vertices, normals, uvs, faces = parse_roblox_mesh(mesh_bytes)
     if not vertices or not faces:
         return False
@@ -458,14 +441,12 @@ def save_mesh_to_folder(mesh_bytes: bytes, texture_id: int | None,
     write_mtl(mtl_path, f"{base_name}.png" if tex_ok else "")
     write_obj(vertices, normals, uvs, faces, obj_path,
               f"{base_name}.mtl", f"{base_name}.png")
-    print(f"      [{'✓ tex' if tex_ok else '✗ no tex'}] "
+    print(f"      [{'ok tex' if tex_ok else 'no tex'}] "
           f"{base_name}.obj  ({len(vertices)}v {len(faces)}f)")
     return True
 
 
-def download_and_save(asset_id: int, folder: str,
-                      base_name: str,
-                      texture_id: int | None = None) -> bool:
+def download_and_save(asset_id: int, folder: str, base_name: str, texture_id=None) -> bool:
     asset_url = get_asset_download_url(asset_id)
     if not asset_url:
         print(f"      [SKIP] No CDN URL for {asset_id}")
@@ -490,11 +471,14 @@ def download_and_save(asset_id: int, folder: str,
             tex_id    = entry.get("texture_id") or texture_id
             inst_name = to_snake_case(entry.get("name", "mesh")) or "mesh"
             part_name = inst_name if len(mesh_assets) > 1 else base_name
-            if not mesh_id: continue
+            if not mesh_id:
+                continue
             mesh_url = get_asset_download_url(mesh_id)
-            if not mesh_url: continue
+            if not mesh_url:
+                continue
             r_mesh = safe_get(mesh_url)
-            if r_mesh is None or not r_mesh.ok: continue
+            if r_mesh is None or not r_mesh.ok:
+                continue
             if save_mesh_to_folder(r_mesh.content, tex_id, folder, part_name):
                 saved = True
             time.sleep(SLEEP_BETWEEN_REQUESTS)
@@ -506,27 +490,16 @@ def download_and_save(asset_id: int, folder: str,
         return False
 
 
-# ═════════════════��═════════════════════════════════════════════
-# OFFSALE ITEMS — Rolimons fetch
+# ═══════════════════════════════════════════════════════════════
+# OFFSALE ITEMS - Rolimons fetch
 # ═══════════════════════════════════════════════════════════════
 
-def fetch_offsale_items(known_onsale_ids: set[int]) -> list[dict]:
-    """
-    Fetch offsale accessory items from Rolimons item database.
-    Rolimons tracks ALL Roblox limited/offsale items with their
-    asset IDs, names and asset types.
-
-    Returns list of {id, name, assetType} dicts that are:
-    - Made by Roblox (creator check via catalog API)
-    - Offsale (not in known_onsale_ids)
-    - Accessory type we care about
-    """
+def fetch_offsale_items(known_onsale_ids: set) -> list:
     cached = load_offsale_cache()
     if cached is not None:
-        # Filter out any that are now in onsale
         return [i for i in cached if i["id"] not in known_onsale_ids]
 
-    print("[Offsale] Fetching item database from Rolimons …")
+    print("[Offsale] Fetching item database from Rolimons ...")
     r = safe_get(ROLIMONS_ITEMS_URL)
     if r is None or not r.ok:
         print(f"  [SKIP] Rolimons unavailable ({r.status_code if r else 'no response'})")
@@ -539,20 +512,11 @@ def fetch_offsale_items(known_onsale_ids: set[int]) -> list[dict]:
         print(f"  [SKIP] Could not parse Rolimons response: {e}")
         return []
 
-    # Rolimons item format:
-    # { "asset_id": [name, acronym, value, default_value,
-    #                demand, trend, projected, hyped,
-    #                rare, rat, ...]  }
-    # We need to verify each item is by Roblox + get asset type
-    # via the catalog details API in batches
+    all_ids = [int(aid) for aid in items.keys()]
+    offsale = [aid for aid in all_ids if aid not in known_onsale_ids]
+    print(f"  Rolimons total: {len(all_ids)}  | not in our onsale set: {len(offsale)}")
 
-    all_ids    = [int(aid) for aid in items.keys()]
-    offsale    = [aid for aid in all_ids if aid not in known_onsale_ids]
-    print(f"  Rolimons total: {len(all_ids)}  "
-          f"| not in our onsale set: {len(offsale)}")
-
-    # ── Verify via catalog API in batches of 120 ──────────────
-    print("  Verifying asset types + Roblox creator via catalog API …")
+    print("  Verifying asset types + Roblox creator via catalog API ...")
     verified   = []
     chunk_size = 120
 
@@ -562,7 +526,7 @@ def fetch_offsale_items(known_onsale_ids: set[int]) -> list[dict]:
         resp    = safe_post(CATALOG_ITEM_URL, json=payload)
 
         if resp is None or not resp.ok:
-            print(f"  [WARN] Catalog batch {i//chunk_size+1} failed — skipping chunk")
+            print(f"  [WARN] Catalog batch {i//chunk_size+1} failed - skipping chunk")
             time.sleep(5)
             continue
 
@@ -572,7 +536,6 @@ def fetch_offsale_items(known_onsale_ids: set[int]) -> list[dict]:
             creator    = d.get("creatorTargetId")
             name       = d.get("name", f"asset_{aid}")
 
-            # Only keep Roblox-made accessories we want
             if (asset_type in WANTED_ASSET_TYPES
                     and creator == ROBLOX_USER_ID
                     and aid not in known_onsale_ids):
@@ -583,15 +546,12 @@ def fetch_offsale_items(known_onsale_ids: set[int]) -> list[dict]:
                 })
 
         prog = min(i + chunk_size, len(offsale))
-        print(f"  Verified {prog}/{len(offsale)} "
-              f"→ {len(verified)} offsale accessories so far    ",
-              end="\r")
+        print(f"  Verified {prog}/{len(offsale)} -> {len(verified)} offsale accessories so far    ", end="\r")
         time.sleep(SLEEP_BETWEEN_REQUESTS)
 
     print()
-    print(f"  ── Total offsale accessories found: {len(verified)}\n")
+    print(f"  -- Total offsale accessories found: {len(verified)}\n")
 
-    # Breakdown
     counts = {}
     for item in verified:
         t = item["assetType"]
@@ -619,8 +579,10 @@ def fetch_pass(label, min_price, max_price, sort_type):
             "Limit": 30, "SortType": sort_type,
             "SortAggregation": 5, "MinPrice": min_price,
         }
-        if max_price is not None: params["MaxPrice"] = max_price
-        if cursor: params["Cursor"] = cursor
+        if max_price is not None:
+            params["MaxPrice"] = max_price
+        if cursor:
+            params["Cursor"] = cursor
         r = safe_get(CATALOG_SEARCH_URL, params=params)
         if r is None or not r.ok:
             if r: print(f"\n  [API {r.status_code}]: {r.text[:150]}")
@@ -628,10 +590,10 @@ def fetch_pass(label, min_price, max_price, sort_type):
         data  = r.json()
         batch = data.get("data", [])
         items.extend(batch)
-        print(f"  [{label}] page {page}: +{len(batch)} "
-              f"(total: {len(items)})    ", end="\r")
+        print(f"  [{label}] page {page}: +{len(batch)} (total: {len(items)})    ", end="\r")
         cursor = data.get("nextPageCursor")
-        if not cursor: break
+        if not cursor:
+            break
         time.sleep(SLEEP_BETWEEN_REQUESTS)
     print()
     return items
@@ -646,29 +608,33 @@ def fetch_hair_pass(sort_type):
             "CreatorTargetId": ROBLOX_USER_ID,
             "Limit": 30, "SortType": sort_type, "SortAggregation": 5,
         }
-        if cursor: params["Cursor"] = cursor
+        if cursor:
+            params["Cursor"] = cursor
         r = safe_get(HAIR_SEARCH_URL, params=params)
         if r is None or not r.ok:
             if r: print(f"\n  [API {r.status_code}]: {r.text[:150]}")
             break
         data  = r.json()
         batch = data.get("data", [])
+        # Force correct asset type for all hair items
+        for item in batch:
+            item["assetType"] = 41
         items.extend(batch)
-        print(f"  [Hair sort={sort_type}] page {page}: +{len(batch)} "
-              f"(total: {len(items)})    ", end="\r")
+        print(f"  [Hair sort={sort_type}] page {page}: +{len(batch)} (total: {len(items)})    ", end="\r")
         cursor = data.get("nextPageCursor")
-        if not cursor: break
+        if not cursor:
+            break
         time.sleep(SLEEP_BETWEEN_REQUESTS)
     print()
     return items
 
 
-def fetch_all_accessories() -> list[dict]:
+def fetch_all_accessories() -> list:
     cached = load_catalog_cache()
     if cached is not None:
         return cached
 
-    print("[Catalog] Fetching accessories via price-range slicing …\n")
+    print("[Catalog] Fetching accessories via price-range slicing ...\n")
     seen, all_raw = set(), []
     sort_names   = {0: "Relevance", 4: "PriceAsc", 5: "PriceDesc"}
     total_passes = len(PRICE_SLICES) * len(SORT_ORDERS)
@@ -678,43 +644,42 @@ def fetch_all_accessories() -> list[dict]:
         for sort_type in SORT_ORDERS:
             pass_num  += 1
             full_label = f"{label}/{sort_names[sort_type]}"
-            print(f"  Pass {pass_num}/{total_passes}: '{full_label}' …")
+            print(f"  Pass {pass_num}/{total_passes}: '{full_label}' ...")
             batch = fetch_pass(full_label, min_price, max_price, sort_type)
             new   = [i for i in batch if i["id"] not in seen]
             if not new and pass_num > 1:
-                print(f"  ✓ 0 new — skipping remaining sorts for '{label}'\n")
+                print(f"  0 new - skipping remaining sorts for '{label}'\n")
                 break
             seen.update(i["id"] for i in new)
             all_raw.extend(new)
-            print(f"  ✓ {len(batch)} fetched, {len(new)} new "
-                  f"→ {len(all_raw)} unique\n")
+            print(f"  {len(batch)} fetched, {len(new)} new -> {len(all_raw)} unique\n")
             time.sleep(SLEEP_BETWEEN_PASSES)
 
+    # Fetch hair separately and force assetType=41 so it lands in hair/ folder
     for sort_type in SORT_ORDERS:
         sort_name = sort_names[sort_type]
-        print(f"  Hair/{sort_name} …")
+        print(f"  Hair/{sort_name} ...")
         batch = fetch_hair_pass(sort_type)
         new   = [i for i in batch if i["id"] not in seen]
         if not new:
-            print(f"  ✓ 0 new — skipping remaining hair sorts\n")
+            print(f"  0 new - skipping remaining hair sorts\n")
             break
         seen.update(i["id"] for i in new)
         all_raw.extend(new)
-        print(f"  ✓ Hair/{sort_name}: {len(new)} new "
-              f"→ {len(all_raw)} unique\n")
+        print(f"  Hair/{sort_name}: {len(new)} new -> {len(all_raw)} unique\n")
         time.sleep(SLEEP_BETWEEN_PASSES)
 
     kept = [i for i in all_raw if i.get("assetType") in WANTED_ASSET_TYPES]
     save_catalog_cache(kept)
+
     print("  Breakdown:")
     counts = {}
     for item in kept:
-        counts[item.get("assetType", 0)] = \
-            counts.get(item.get("assetType", 0), 0) + 1
+        counts[item.get("assetType", 0)] = counts.get(item.get("assetType", 0), 0) + 1
     for tid in sorted(counts):
         info = ASSET_TYPE_INFO.get(tid, ("?", "?"))
         print(f"    {info[0]}: {counts[tid]}")
-    print(f"  ── Total: {len(kept)}\n")
+    print(f"  -- Total: {len(kept)}\n")
     return kept
 
 
@@ -722,15 +687,16 @@ def fetch_all_accessories() -> list[dict]:
 # BUNDLE PROCESSING
 # ═══════════════════════════════════════════════════════════════
 
-def fetch_catalog_bundles() -> list[dict]:
-    print("[Catalog] Fetching bundles …")
+def fetch_catalog_bundles() -> list:
+    print("[Catalog] Fetching bundles ...")
     items, seen, cursor = [], set(), ""
     while True:
         params = {"limit": 100, "sortOrder": "Asc"}
-        if cursor: params["cursor"] = cursor
-        r = safe_get(USER_BUNDLES_URL.format(user_id=ROBLOX_USER_ID),
-                     params=params)
-        if r is None or not r.ok: break
+        if cursor:
+            params["cursor"] = cursor
+        r = safe_get(USER_BUNDLES_URL.format(user_id=ROBLOX_USER_ID), params=params)
+        if r is None or not r.ok:
+            break
         data = r.json()
         for item in data.get("data", []):
             if item["id"] not in seen:
@@ -738,15 +704,14 @@ def fetch_catalog_bundles() -> list[dict]:
                 items.append(item)
         print(f"  Bundles so far: {len(items)}")
         cursor = data.get("nextPageCursor")
-        if not cursor: break
+        if not cursor:
+            break
         time.sleep(SLEEP_BETWEEN_REQUESTS)
     print(f"  Total bundles: {len(items)}\n")
     return items
 
 
-def process_bundle(bundle_id: int, bundle_name: str,
-                   completed: set[int],
-                   acc_completed: set[int]) -> None:
+def process_bundle(bundle_id: int, bundle_name: str, completed: set, acc_completed: set) -> None:
     r = safe_get(BUNDLE_DETAILS_URL.format(bundle_id=bundle_id))
     if r is None or not r.ok:
         print(f"  [SKIP] Could not get details for bundle {bundle_id}")
@@ -754,11 +719,11 @@ def process_bundle(bundle_id: int, bundle_name: str,
     details = r.json()
     items   = details.get("items", [])
 
-    safe_bname   = to_snake_case(bundle_name) or f"bundle_{bundle_id}"
-    bundle_root  = os.path.join(OUTPUT_DIR, "bundles", safe_bname)
-    r6_folder    = os.path.join(bundle_root, "r6")
-    r15_folder   = os.path.join(bundle_root, "r15")
-    main_acc_dir = os.path.join(OUTPUT_DIR, "accessories")
+    safe_bname  = to_snake_case(bundle_name) or f"bundle_{bundle_id}"
+    bundle_root = os.path.join(OUTPUT_DIR, "bundles", safe_bname)
+    r6_folder   = os.path.join(bundle_root, "r6")
+    r15_folder  = os.path.join(bundle_root, "r15")
+    acc_dir     = os.path.join(OUTPUT_DIR, "accessories")
 
     n_r6  = sum(1 for i in items if i.get("assetType") in R6_PART_TYPES)
     n_r15 = sum(1 for i in items if i.get("assetType") in R15_PART_TYPES)
@@ -782,7 +747,7 @@ def process_bundle(bundle_id: int, bundle_name: str,
             if asset_id in completed:
                 print(f"    [skip R6] {part_name}")
                 continue
-            print(f"    [R6] {part_name}  ← {asset_name}")
+            print(f"    [R6] {part_name}  <- {asset_name}")
             if download_and_save(asset_id, r6_folder, part_name):
                 mark_done(asset_id, completed)
             time.sleep(SLEEP_BETWEEN_REQUESTS)
@@ -792,7 +757,7 @@ def process_bundle(bundle_id: int, bundle_name: str,
             if asset_id in completed:
                 print(f"    [skip R15] {part_name}")
                 continue
-            print(f"    [R15] {part_name}  ← {asset_name}")
+            print(f"    [R15] {part_name}  <- {asset_name}")
             if download_and_save(asset_id, r15_folder, part_name):
                 mark_done(asset_id, completed)
             time.sleep(SLEEP_BETWEEN_REQUESTS)
@@ -800,24 +765,16 @@ def process_bundle(bundle_id: int, bundle_name: str,
         elif asset_type in WANTED_ASSET_TYPES:
             type_name   = ASSET_TYPE_INFO[asset_type][0]
             type_folder = ASSET_TYPE_INFO[asset_type][1]
-
-            bundle_acc_path = os.path.join(
-                bundle_root, "accessories", type_folder, safe_aname)
-            main_acc_path = os.path.join(
-                main_acc_dir, type_folder, safe_aname)
-
-            if asset_id not in completed:
-                print(f"    [{type_name}→bundle] {asset_name}")
-                download_and_save(asset_id, bundle_acc_path, safe_aname)
-                time.sleep(SLEEP_BETWEEN_REQUESTS)
+            # Save accessories flat into accessories/<type>/<name>/
+            main_acc_path = os.path.join(acc_dir, type_folder, safe_aname)
 
             if asset_id not in acc_completed:
-                print(f"    [{type_name}→accessories/] {asset_name}")
+                print(f"    [{type_name}] {asset_name}")
                 if download_and_save(asset_id, main_acc_path, safe_aname):
                     acc_completed.add(asset_id)
                 time.sleep(SLEEP_BETWEEN_REQUESTS)
             else:
-                print(f"    [{type_name}] {asset_name} already in accessories/")
+                print(f"    [{type_name}] {asset_name} already downloaded")
 
             mark_done(asset_id, completed)
 
@@ -827,10 +784,9 @@ def process_bundle(bundle_id: int, bundle_name: str,
 # ═══════════════════════════════════════════════════════════════
 
 def main():
-    # Create base folders
+    # Create base accessory folders
     for _, folder_name in ASSET_TYPE_INFO.values():
-        os.makedirs(os.path.join(OUTPUT_DIR, "accessories", folder_name),
-                    exist_ok=True)
+        os.makedirs(os.path.join(OUTPUT_DIR, "accessories", folder_name), exist_ok=True)
     os.makedirs(os.path.join(OUTPUT_DIR, "bundles"), exist_ok=True)
 
     completed     = load_progress()
@@ -853,8 +809,8 @@ def main():
 
         type_folder = ASSET_TYPE_INFO.get(asset_type, (None, "other"))[1]
         safe_name   = to_snake_case(name) or f"asset_{aid}"
-        folder      = os.path.join(OUTPUT_DIR, "accessories",
-                                   type_folder, safe_name)
+        # Flat structure: accessories/<type>/<asset_name>/
+        folder      = os.path.join(OUTPUT_DIR, "accessories", type_folder, safe_name)
 
         print(f"  [{i}/{len(items)}] [{type_folder}] {name}  (id={aid})")
         if download_and_save(aid, folder, safe_name):
@@ -864,7 +820,7 @@ def main():
 
     # ── Step 2: Offsale accessories ───────────────────────────
     print("\n" + "=" * 60)
-    print("[Offsale] Fetching offsale accessories …\n")
+    print("[Offsale] Fetching offsale accessories ...\n")
     offsale_items = fetch_offsale_items(onsale_ids)
     print(f"[Offsale] {len(offsale_items)} offsale items to download\n")
 
@@ -879,11 +835,9 @@ def main():
 
         type_folder = ASSET_TYPE_INFO.get(asset_type, (None, "other"))[1]
         safe_name   = to_snake_case(name) or f"asset_{aid}"
-        folder      = os.path.join(OUTPUT_DIR, "accessories",
-                                   type_folder, safe_name)
+        folder      = os.path.join(OUTPUT_DIR, "accessories", type_folder, safe_name)
 
-        print(f"  [{i}/{len(offsale_items)}] [offsale/{type_folder}] "
-              f"{name}  (id={aid})")
+        print(f"  [{i}/{len(offsale_items)}] [offsale/{type_folder}] {name}  (id={aid})")
         if download_and_save(aid, folder, safe_name):
             mark_done(aid, completed)
             acc_completed.add(aid)
