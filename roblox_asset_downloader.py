@@ -280,8 +280,29 @@ def _parse_mesh_v1(text: str):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     vertices, normals, uvs, faces = [], [], [], []
     try:
-        face_count = int(lines[2])
-        for face_line in lines[3:3+face_count]:
+        # v1.00 format:
+        # Line 0: "version 1.00"
+        # Line 1: num_faces  (just a plain integer)
+        # Line 2+: one face per line, 3 vertices each with 9 floats
+        #
+        # v1.01 format:
+        # Line 0: "version 1.01"
+        # Line 1: "2"          ← LOD count, skip this
+        # Line 2: num_faces
+        # Line 3+: face data
+
+        version_line = lines[0].lower()
+
+        if "1.01" in version_line or "1.02" in version_line:
+            # Skip LOD count line, face count is next
+            face_count = int(lines[2])
+            face_start = 3
+        else:
+            # v1.00 — face count is on line 1
+            face_count = int(lines[1])
+            face_start = 2
+
+        for face_line in lines[face_start:face_start + face_count]:
             nums = re.findall(r"[-\d.e+]+", face_line)
             if len(nums) < 27: continue
             fi_v, fi_n, fi_u = [], [], []
