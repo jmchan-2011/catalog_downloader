@@ -103,7 +103,7 @@ PRICE_SLICES = [
 
 # ═══════════════════════════════════════════════════════════════
 # API ENDPOINTS
-# ═════════════════════════════════════════════���═════════════════
+# ═══════════════════════════════════════════════════════════════
 
 CATALOG_SEARCH_URL = "https://catalog.roproxy.com/v1/search/items/details"
 HAIR_SEARCH_URL    = "https://catalog.roproxy.com/v1/search/items"
@@ -125,6 +125,7 @@ HEADERS = {
 
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
+
 
 # ═══════════════════════════════════════════════════════════════
 # AUTH
@@ -163,7 +164,6 @@ if any([REFRESH_ALL, REFRESH_ACCESSORIES, REFRESH_OFFSALE, REFRESH_GEARS, REFRES
 # ═══════════════════════════════════════════════════════════════
 
 def load_master_cache() -> dict:
-    """Load master cache. Returns dict with keys: accessories, offsale, gears."""
     if not os.path.exists(MASTER_CACHE_FILE):
         return {}
     try:
@@ -315,6 +315,12 @@ def _parse_mesh_binary(data: bytes):
         pos     = nl + 1
 
         if version.startswith("2"):
+            # v2 header layout:
+            #   +0  uint16  sz_header  (size of this header block)
+            #   +2  uint16  sz_vertex  (bytes per vertex, usually 36)
+            #   +4  uint16  sz_face    (bytes per face, usually 12)
+            #   +6  uint32  num_verts
+            #   +10 uint32  num_faces
             sz_header = struct.unpack_from("<H", data, pos)[0]
             sz_vertex = struct.unpack_from("<H", data, pos+2)[0]
             sz_face   = struct.unpack_from("<H", data, pos+4)[0]
@@ -337,11 +343,19 @@ def _parse_mesh_binary(data: bytes):
                 a, b, c = struct.unpack_from("<III", data, base)
                 faces.append([(a+1,a+1,a+1),(b+1,b+1,b+1),(c+1,c+1,c+1)])
 
-        elif version.startswith(("3","4","5")):
+        elif version.startswith(("3", "4", "5")):
+            # v3+ header layout:
+            #   +0  uint16  sz_header  (always 16)
+            #   +2  uint8   sz_vertex  (always 40 — includes 4-byte tangent)
+            #   +3  uint8   sz_lod     (12)
+            #   +4  uint16  (reserved / num_lods)
+            #   +6  uint16  (reserved)
+            #   +8  uint32  num_verts
+            #   +12 uint32  num_faces
             sz_header = struct.unpack_from("<H", data, pos)[0]
-            sz_vertex = struct.unpack_from("<H", data, pos+2)[0]
-            num_verts = struct.unpack_from("<I", data, pos+12)[0]
-            num_faces = struct.unpack_from("<I", data, pos+16)[0]
+            sz_vertex = struct.unpack_from("<B", data, pos+2)[0]   # uint8, not uint16!
+            num_verts = struct.unpack_from("<I", data, pos+8)[0]   # offset +8, not +12
+            num_faces = struct.unpack_from("<I", data, pos+12)[0]  # offset +12, not +16
             sz_face   = 12
             vpos = pos + sz_header
             for i in range(num_verts):
@@ -350,6 +364,7 @@ def _parse_mesh_binary(data: bytes):
                 x, y, z    = struct.unpack_from("<fff", data, base)
                 nx, ny, nz = struct.unpack_from("<fff", data, base+12)
                 u, v       = struct.unpack_from("<ff",  data, base+24)
+                # base+32..+39 = tangent (4 bytes) + bone weights (4 bytes), skipped
                 vertices.append((x, y, z))
                 normals.append((nx, ny, nz))
                 uvs.append((u, v))
@@ -359,6 +374,7 @@ def _parse_mesh_binary(data: bytes):
                 if base + 12 > len(data): break
                 a, b, c = struct.unpack_from("<III", data, base)
                 faces.append([(a+1,a+1,a+1),(b+1,b+1,b+1),(c+1,c+1,c+1)])
+
     except Exception as e:
         print(f"    [mesh binary error] {e}")
     return vertices, normals, uvs, faces
@@ -555,7 +571,6 @@ def fetch_hair_pass(sort_type):
             break
         data  = r.json()
         batch = data.get("data", [])
-        # Only keep true hair assets
         batch = [item for item in batch if item.get("assetType") == 41 and isinstance(item.get("id"), int)]
         items.extend(batch)
         print(f"  [Hair sort={sort_type}] page {page}: +{len(batch)} (total: {len(items)})    ", end="\r")
