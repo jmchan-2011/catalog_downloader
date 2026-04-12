@@ -2,11 +2,22 @@
 Roblox Avatar Asset Downloader & OBJ Converter
 ────────────────────────────────────────────────
 Requirements:  pip3 install requests lz4
-Usage:         python3 roblox_asset_downloader.py
+Usage:         python3 roblox_avatar_downloader2.py
+
+Refresh flags:
+  --refresh-all           delete and re-fetch everything
+  --refresh-accessories   re-fetch onsale accessories only
+  --refresh-offsale       re-fetch offsale accessories only
+  --refresh-gears         re-fetch gears only
+  --refresh-bundles       re-fetch bundles only (no cache, always live)
+
+Auth:
+  export ROBLOSECURITY="<_|WARNING:-DO-NOT-SHARE-THIS...>"
 """
 
 import os
 import re
+import sys
 import time
 import json
 import struct
@@ -20,8 +31,7 @@ from rbxm_parser import extract_mesh_assets
 
 OUTPUT_DIR             = "roblox_assets"
 PROGRESS_FILE          = "progress.json"
-CATALOG_CACHE_FILE     = "catalog_cache.json"
-OFFSALE_CACHE_FILE     = "offsale_cache.json"
+MASTER_CACHE_FILE      = "master_cache.json"
 SLEEP_BETWEEN_REQUESTS = 1.2
 SLEEP_BETWEEN_PASSES   = 15
 SLEEP_ON_RATE_LIMIT    = 60
@@ -29,7 +39,6 @@ MAX_ASSETS             = None
 
 ROBLOX_USER_ID = 1
 
-# asset type ID → (display name, folder name)
 ASSET_TYPE_INFO = {
     8:  ("Hat",      "hat"),
     41: ("Hair",     "hair"),
@@ -94,18 +103,15 @@ PRICE_SLICES = [
 
 # ═══════════════════════════════════════════════════════════════
 # API ENDPOINTS
-# ═══════════════════════════════════════════════════════════════
+# ═════════════════════════════════════════════���═════════════════
 
-CATALOG_SEARCH_URL  = "https://catalog.roproxy.com/v1/search/items/details"
-HAIR_SEARCH_URL     = "https://catalog.roproxy.com/v1/search/items"
-ASSET_DETAILS_URL   = "https://catalog.roproxy.com/v1/catalog/items/details"
-ASSET_DELIVERY_URL  = "https://assetdelivery.roproxy.com/v2/assetId/{asset_id}"
-BUNDLE_DETAILS_URL  = "https://catalog.roproxy.com/v1/bundles/{bundle_id}/details"
-USER_BUNDLES_URL    = "https://catalog.roproxy.com/v1/users/{user_id}/bundles"
-CATALOG_ITEM_URL    = "https://catalog.roproxy.com/v1/catalog/items/details"
-
-# Rolimons items API
-ROLIMONS_ITEMS_URL  = "https://www.rolimons.com/itemapi/itemdetails"
+CATALOG_SEARCH_URL = "https://catalog.roproxy.com/v1/search/items/details"
+HAIR_SEARCH_URL    = "https://catalog.roproxy.com/v1/search/items"
+ASSET_DELIVERY_URL = "https://assetdelivery.roproxy.com/v2/assetId/{asset_id}"
+BUNDLE_DETAILS_URL = "https://catalog.roproxy.com/v1/bundles/{bundle_id}/details"
+USER_BUNDLES_URL   = "https://catalog.roproxy.com/v1/users/{user_id}/bundles"
+CATALOG_ITEM_URL   = "https://catalog.roproxy.com/v1/catalog/items/details"
+ROLIMONS_ITEMS_URL = "https://www.rolimons.com/itemapi/itemdetails"
 
 HEADERS = {
     "User-Agent":      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -119,6 +125,71 @@ HEADERS = {
 
 SESSION = requests.Session()
 SESSION.headers.update(HEADERS)
+
+# ═══════════════════════════════════════════════════════════════
+# AUTH
+# ═══════════════════════════════════════════════════════════════
+
+ROBLOSECURITY = os.environ.get("ROBLOSECURITY", "").strip()
+if ROBLOSECURITY:
+    SESSION.cookies.set(".ROBLOSECURITY", ROBLOSECURITY, domain=".roblox.com")
+    SESSION.cookies.set(".ROBLOSECURITY", ROBLOSECURITY, domain=".roproxy.com")
+    print("[Auth] Using .ROBLOSECURITY cookie from environment variable.")
+else:
+    print("[Auth] No ROBLOSECURITY set; some assets may return 401 and be skipped.")
+
+
+# ═══════════════════════════════════════════════════════════════
+# REFRESH FLAGS
+# ═══════════════════════════════════════════════════════════════
+
+REFRESH_ALL         = "--refresh-all"         in sys.argv
+REFRESH_ACCESSORIES = "--refresh-accessories" in sys.argv or REFRESH_ALL
+REFRESH_OFFSALE     = "--refresh-offsale"     in sys.argv or REFRESH_ALL
+REFRESH_GEARS       = "--refresh-gears"       in sys.argv or REFRESH_ALL
+REFRESH_BUNDLES     = "--refresh-bundles"     in sys.argv or REFRESH_ALL
+
+if any([REFRESH_ALL, REFRESH_ACCESSORIES, REFRESH_OFFSALE, REFRESH_GEARS, REFRESH_BUNDLES]):
+    flags = []
+    if REFRESH_ACCESSORIES: flags.append("accessories")
+    if REFRESH_OFFSALE:     flags.append("offsale")
+    if REFRESH_GEARS:       flags.append("gears")
+    if REFRESH_BUNDLES:     flags.append("bundles")
+    print(f"[Refresh] Will re-fetch: {', '.join(flags)}\n")
+
+
+# ═══════════════════════════════════════════════════════════════
+# MASTER CACHE
+# ═══════════════════════════════════════════════════════════════
+
+def load_master_cache() -> dict:
+    """Load master cache. Returns dict with keys: accessories, offsale, gears."""
+    if not os.path.exists(MASTER_CACHE_FILE):
+        return {}
+    try:
+        with open(MASTER_CACHE_FILE, "r") as f:
+            data = json.load(f)
+        ts = data.get("timestamp", "unknown")
+        print(f"[Cache] Loaded master cache (fetched: {ts})")
+        print(f"[Cache]   accessories : {len(data.get('accessories', []))}")
+        print(f"[Cache]   offsale     : {len(data.get('offsale', []))}")
+        print(f"[Cache]   gears       : {len(data.get('gears', []))}")
+        print(f"[Cache] Delete {MASTER_CACHE_FILE} or use --refresh-* flags to update.\n")
+        return data
+    except Exception as e:
+        print(f"[Cache] Could not read master cache: {e} - starting fresh\n")
+        return {}
+
+
+def save_master_cache(cache: dict):
+    from datetime import datetime
+    cache["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(MASTER_CACHE_FILE, "w") as f:
+        json.dump(cache, f)
+    print(f"[Cache] Master cache saved to {MASTER_CACHE_FILE}")
+    print(f"[Cache]   accessories : {len(cache.get('accessories', []))}")
+    print(f"[Cache]   offsale     : {len(cache.get('offsale', []))}")
+    print(f"[Cache]   gears       : {len(cache.get('gears', []))}\n")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -143,68 +214,6 @@ def mark_done(asset_id: int, completed: set):
     completed.add(asset_id)
     with open(PROGRESS_FILE, "w") as f:
         json.dump({"completed": sorted(completed)}, f)
-
-
-# ═══════════════════════════════════════════════════════════════
-# CATALOG CACHE
-# ═══════════════════════════════════════════════════════════════
-
-def load_catalog_cache():
-    if not os.path.exists(CATALOG_CACHE_FILE):
-        return None
-    try:
-        with open(CATALOG_CACHE_FILE, "r") as f:
-            data = json.load(f)
-        items = data.get("items", [])
-        ts    = data.get("timestamp", "unknown")
-        print(f"[Cache] Loaded {len(items)} catalog items (fetched: {ts})")
-        print(f"[Cache] Delete {CATALOG_CACHE_FILE} to force a fresh fetch.\n")
-        return items
-    except Exception as e:
-        print(f"[Cache] Could not read cache: {e} - re-fetching")
-        return None
-
-
-def save_catalog_cache(items: list):
-    from datetime import datetime
-    with open(CATALOG_CACHE_FILE, "w") as f:
-        json.dump({
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "count":     len(items),
-            "items":     items,
-        }, f)
-    print(f"[Cache] Saved {len(items)} items to {CATALOG_CACHE_FILE}\n")
-
-
-# ═══════════════════════════════════════════════════════════════
-# OFFSALE CACHE
-# ═══════════════════════════════════════════════════════════════
-
-def load_offsale_cache():
-    if not os.path.exists(OFFSALE_CACHE_FILE):
-        return None
-    try:
-        with open(OFFSALE_CACHE_FILE, "r") as f:
-            data = json.load(f)
-        items = data.get("items", [])
-        ts    = data.get("timestamp", "unknown")
-        print(f"[Offsale Cache] Loaded {len(items)} offsale items (fetched: {ts})")
-        print(f"[Offsale Cache] Delete {OFFSALE_CACHE_FILE} to force a fresh fetch.\n")
-        return items
-    except Exception as e:
-        print(f"[Offsale Cache] Could not read: {e} - re-fetching")
-        return None
-
-
-def save_offsale_cache(items: list):
-    from datetime import datetime
-    with open(OFFSALE_CACHE_FILE, "w") as f:
-        json.dump({
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "count":     len(items),
-            "items":     items,
-        }, f)
-    print(f"[Offsale Cache] Saved {len(items)} items to {OFFSALE_CACHE_FILE}\n")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -260,16 +269,13 @@ def safe_post(url: str, **kwargs):
 
 
 # ═══════════════════════════════════════════════════════════════
-# MESH PARSING  (v1 fix included)
+# MESH PARSING
 # ═══════════════════════════════════════════════════════════════
 
 def _parse_mesh_v1(text: str):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     vertices, normals, uvs, faces = [], [], [], []
     try:
-        # v1.00:  Line 0 = version, Line 1 = face_count, Line 2+ = face data
-        # v1.01+: Line 0 = version, Line 1 = LOD count (skip),
-        #         Line 2 = face_count, Line 3+ = face data
         version_line = lines[0].lower()
         if "1.01" in version_line or "1.02" in version_line:
             face_count = int(lines[2])
@@ -410,7 +416,15 @@ def get_asset_download_url(asset_id: int):
     r = safe_get(ASSET_DELIVERY_URL.format(asset_id=asset_id))
     if r is None or not r.ok:
         return None
-    locs = r.json().get("locations", [])
+    try:
+        j = r.json()
+    except Exception:
+        return None
+    if j.get("errors"):
+        err = j["errors"][0]
+        print(f"      [AssetDelivery error] {asset_id}: {err.get('code','')} {err.get('message','')}")
+        return None
+    locs = j.get("locations", [])
     return locs[0].get("location") if locs else None
 
 
@@ -491,81 +505,6 @@ def download_and_save(asset_id: int, folder: str, base_name: str, texture_id=Non
 
 
 # ═══════════════════════════════════════════════════════════════
-# OFFSALE ITEMS - Rolimons fetch
-# ═══════════════════════════════════════════════════════════════
-
-def fetch_offsale_items(known_onsale_ids: set) -> list:
-    cached = load_offsale_cache()
-    if cached is not None:
-        return [i for i in cached if i["id"] not in known_onsale_ids]
-
-    print("[Offsale] Fetching item database from Rolimons ...")
-    r = safe_get(ROLIMONS_ITEMS_URL)
-    if r is None or not r.ok:
-        print(f"  [SKIP] Rolimons unavailable ({r.status_code if r else 'no response'})")
-        return []
-
-    try:
-        data  = r.json()
-        items = data.get("items", {})
-    except Exception as e:
-        print(f"  [SKIP] Could not parse Rolimons response: {e}")
-        return []
-
-    all_ids = [int(aid) for aid in items.keys()]
-    offsale = [aid for aid in all_ids if aid not in known_onsale_ids]
-    print(f"  Rolimons total: {len(all_ids)}  | not in our onsale set: {len(offsale)}")
-
-    print("  Verifying asset types + Roblox creator via catalog API ...")
-    verified   = []
-    chunk_size = 120
-
-    for i in range(0, len(offsale), chunk_size):
-        chunk   = offsale[i:i+chunk_size]
-        payload = {"items": [{"itemType": "Asset", "id": aid} for aid in chunk]}
-        resp    = safe_post(CATALOG_ITEM_URL, json=payload)
-
-        if resp is None or not resp.ok:
-            print(f"  [WARN] Catalog batch {i//chunk_size+1} failed - skipping chunk")
-            time.sleep(5)
-            continue
-
-        for d in resp.json().get("data", []):
-            aid        = d.get("id")
-            asset_type = d.get("assetType")
-            creator    = d.get("creatorTargetId")
-            name       = d.get("name", f"asset_{aid}")
-
-            if (asset_type in WANTED_ASSET_TYPES
-                    and creator == ROBLOX_USER_ID
-                    and aid not in known_onsale_ids):
-                verified.append({
-                    "id":        aid,
-                    "name":      name,
-                    "assetType": asset_type,
-                })
-
-        prog = min(i + chunk_size, len(offsale))
-        print(f"  Verified {prog}/{len(offsale)} -> {len(verified)} offsale accessories so far    ", end="\r")
-        time.sleep(SLEEP_BETWEEN_REQUESTS)
-
-    print()
-    print(f"  -- Total offsale accessories found: {len(verified)}\n")
-
-    counts = {}
-    for item in verified:
-        t = item["assetType"]
-        counts[t] = counts.get(t, 0) + 1
-    for tid in sorted(counts):
-        info = ASSET_TYPE_INFO.get(tid, ("?", "?"))
-        print(f"    {info[0]}: {counts[tid]}")
-    print()
-
-    save_offsale_cache(verified)
-    return verified
-
-
-# ═══════════════════════════════════════════════════════════════
 # CATALOG FETCHING
 # ═══════════════════════════════════════════════════════════════
 
@@ -616,9 +555,8 @@ def fetch_hair_pass(sort_type):
             break
         data  = r.json()
         batch = data.get("data", [])
-        # Force correct asset type for all hair items
-        for item in batch:
-            item["assetType"] = 41
+        # Only keep true hair assets
+        batch = [item for item in batch if item.get("assetType") == 41 and isinstance(item.get("id"), int)]
         items.extend(batch)
         print(f"  [Hair sort={sort_type}] page {page}: +{len(batch)} (total: {len(items)})    ", end="\r")
         cursor = data.get("nextPageCursor")
@@ -629,12 +567,13 @@ def fetch_hair_pass(sort_type):
     return items
 
 
-def fetch_all_accessories() -> list:
-    cached = load_catalog_cache()
-    if cached is not None:
-        return cached
+def fetch_all_accessories(cache: dict) -> list:
+    if not REFRESH_ACCESSORIES and "accessories" in cache:
+        items = cache["accessories"]
+        print(f"[Accessories] Loaded {len(items)} from master cache.\n")
+        return items
 
-    print("[Catalog] Fetching accessories via price-range slicing ...\n")
+    print("[Accessories] Fetching via price-range slicing ...\n")
     seen, all_raw = set(), []
     sort_names   = {0: "Relevance", 4: "PriceAsc", 5: "PriceDesc"}
     total_passes = len(PRICE_SLICES) * len(SORT_ORDERS)
@@ -655,7 +594,6 @@ def fetch_all_accessories() -> list:
             print(f"  {len(batch)} fetched, {len(new)} new -> {len(all_raw)} unique\n")
             time.sleep(SLEEP_BETWEEN_PASSES)
 
-    # Fetch hair separately and force assetType=41 so it lands in hair/ folder
     for sort_type in SORT_ORDERS:
         sort_name = sort_names[sort_type]
         print(f"  Hair/{sort_name} ...")
@@ -670,7 +608,6 @@ def fetch_all_accessories() -> list:
         time.sleep(SLEEP_BETWEEN_PASSES)
 
     kept = [i for i in all_raw if i.get("assetType") in WANTED_ASSET_TYPES]
-    save_catalog_cache(kept)
 
     print("  Breakdown:")
     counts = {}
@@ -680,7 +617,178 @@ def fetch_all_accessories() -> list:
         info = ASSET_TYPE_INFO.get(tid, ("?", "?"))
         print(f"    {info[0]}: {counts[tid]}")
     print(f"  -- Total: {len(kept)}\n")
+
+    cache["accessories"] = kept
+    save_master_cache(cache)
     return kept
+
+
+# ═══════════════════════════════════════════════════════════════
+# OFFSALE FETCHING
+# ═══════════════════════════════════════════════════════════════
+
+def fetch_roblox_offsale_accessories() -> set:
+    print("[Offsale] Fetching recently offsale items from Roblox API ...")
+    found_ids = set()
+    cursor    = ""
+    page      = 0
+
+    while True:
+        page += 1
+        params = {
+            "Category":        11,
+            "CreatorType":     1,
+            "CreatorTargetId": ROBLOX_USER_ID,
+            "salesTypeFilter": 2,
+            "Limit":           30,
+            "SortType":        0,
+            "SortAggregation": 5,
+        }
+        if cursor:
+            params["Cursor"] = cursor
+
+        r = safe_get(CATALOG_SEARCH_URL, params=params)
+        if r is None or not r.ok:
+            print(f"  [WARN] Roblox offsale API failed on page {page}")
+            break
+
+        data  = r.json()
+        batch = data.get("data", [])
+        for item in batch:
+            if item.get("assetType") in WANTED_ASSET_TYPES:
+                found_ids.add(item["id"])
+
+        print(f"  [Roblox offsale] page {page}: +{len(batch)} (unique so far: {len(found_ids)})    ", end="\r")
+
+        cursor = data.get("nextPageCursor")
+        if not cursor:
+            break
+        time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+    print(f"\n  [Roblox offsale] Found {len(found_ids)} offsale accessory IDs")
+    return found_ids
+
+
+def fetch_offsale_items(known_onsale_ids: set, cache: dict) -> list:
+    if not REFRESH_OFFSALE and "offsale" in cache:
+        items = [i for i in cache["offsale"] if i["id"] not in known_onsale_ids]
+        print(f"[Offsale] Loaded {len(items)} from master cache.\n")
+        return items
+
+    print("[Offsale] Fetching from Rolimons ...")
+    rolimons_ids = set()
+    r = safe_get(ROLIMONS_ITEMS_URL)
+    if r is not None and r.ok:
+        try:
+            data  = r.json()
+            items = data.get("items", {})
+            rolimons_ids = set(int(aid) for aid in items.keys())
+            print(f"  Rolimons total items: {len(rolimons_ids)}")
+        except Exception as e:
+            print(f"  [WARN] Could not parse Rolimons: {e}")
+    else:
+        print("  [WARN] Rolimons unavailable - skipping")
+
+    roblox_offsale_ids = fetch_roblox_offsale_accessories()
+    combined = (rolimons_ids | roblox_offsale_ids) - known_onsale_ids
+    print(f"\n  Combined offsale candidates: {len(combined)}")
+
+    print("  Verifying via catalog API ...")
+    offsale    = list(combined)
+    verified   = []
+    chunk_size = 120
+
+    for i in range(0, len(offsale), chunk_size):
+        chunk   = offsale[i:i+chunk_size]
+        payload = {"items": [{"itemType": "Asset", "id": aid} for aid in chunk]}
+        resp    = safe_post(CATALOG_ITEM_URL, json=payload)
+
+        if resp is None or not resp.ok:
+            print(f"  [WARN] Catalog batch {i//chunk_size+1} failed - skipping")
+            time.sleep(5)
+            continue
+
+        for d in resp.json().get("data", []):
+            aid        = d.get("id")
+            asset_type = d.get("assetType")
+            creator    = d.get("creatorTargetId")
+            name       = d.get("name", f"asset_{aid}")
+            if (asset_type in WANTED_ASSET_TYPES
+                    and creator == ROBLOX_USER_ID
+                    and aid not in known_onsale_ids):
+                verified.append({"id": aid, "name": name, "assetType": asset_type})
+
+        prog = min(i + chunk_size, len(offsale))
+        print(f"  Verified {prog}/{len(offsale)} -> {len(verified)} found    ", end="\r")
+        time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+    print()
+    print(f"  -- Total offsale accessories: {len(verified)}\n")
+
+    counts = {}
+    for item in verified:
+        t = item["assetType"]
+        counts[t] = counts.get(t, 0) + 1
+    for tid in sorted(counts):
+        info = ASSET_TYPE_INFO.get(tid, ("?", "?"))
+        print(f"    {info[0]}: {counts[tid]}")
+    print()
+
+    cache["offsale"] = verified
+    save_master_cache(cache)
+    return verified
+
+
+# ═══════════════════════════════════════════════════════════════
+# GEAR FETCHING
+# ═══════════════════════════════════════════════════════════════
+
+def fetch_all_gears(cache: dict) -> list:
+    if not REFRESH_GEARS and "gears" in cache:
+        items = cache["gears"]
+        print(f"[Gears] Loaded {len(items)} from master cache.\n")
+        return items
+
+    print("[Gears] Fetching all Roblox gears from catalog ...")
+    seen, all_gears = set(), []
+    cursor = ""
+    page   = 0
+
+    while True:
+        page += 1
+        params = {
+            "Category":        5,
+            "CreatorType":     1,
+            "CreatorTargetId": ROBLOX_USER_ID,
+            "Limit":           30,
+            "SortType":        0,
+            "SortAggregation": 5,
+        }
+        if cursor:
+            params["Cursor"] = cursor
+
+        r = safe_get(CATALOG_SEARCH_URL, params=params)
+        if r is None or not r.ok:
+            if r: print(f"\n  [API {r.status_code}]: {r.text[:150]}")
+            break
+
+        data  = r.json()
+        batch = data.get("data", [])
+        new   = [i for i in batch if i["id"] not in seen]
+        seen.update(i["id"] for i in new)
+        all_gears.extend(new)
+
+        print(f"  [Gears] page {page}: +{len(batch)} (total: {len(all_gears)})    ", end="\r")
+
+        cursor = data.get("nextPageCursor")
+        if not cursor:
+            break
+        time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+    print(f"\n  [Gears] Found {len(all_gears)} gears total\n")
+    cache["gears"] = all_gears
+    save_master_cache(cache)
+    return all_gears
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -688,7 +796,7 @@ def fetch_all_accessories() -> list:
 # ═══════════════════════════════════════════════════════════════
 
 def fetch_catalog_bundles() -> list:
-    print("[Catalog] Fetching bundles ...")
+    print("[Bundles] Fetching bundles ...")
     items, seen, cursor = [], set(), ""
     while True:
         params = {"limit": 100, "sortOrder": "Asc"}
@@ -765,7 +873,6 @@ def process_bundle(bundle_id: int, bundle_name: str, completed: set, acc_complet
         elif asset_type in WANTED_ASSET_TYPES:
             type_name   = ASSET_TYPE_INFO[asset_type][0]
             type_folder = ASSET_TYPE_INFO[asset_type][1]
-            # Save accessories flat into accessories/<type>/<name>/
             main_acc_path = os.path.join(acc_dir, type_folder, safe_aname)
 
             if asset_id not in acc_completed:
@@ -784,16 +891,21 @@ def process_bundle(bundle_id: int, bundle_name: str, completed: set, acc_complet
 # ═══════════════════════════════════════════════════════════════
 
 def main():
-    # Create base accessory folders
+    # Create base folders
     for _, folder_name in ASSET_TYPE_INFO.values():
         os.makedirs(os.path.join(OUTPUT_DIR, "accessories", folder_name), exist_ok=True)
     os.makedirs(os.path.join(OUTPUT_DIR, "bundles"), exist_ok=True)
+    os.makedirs(os.path.join(OUTPUT_DIR, "gear"), exist_ok=True)
 
+    cache         = load_master_cache()
     completed     = load_progress()
     acc_completed = set(completed)
 
     # ── Step 1: Onsale accessories ────────────────────────────
-    accessory_items = fetch_all_accessories()
+    print("=" * 60)
+    print("STEP 1: Onsale Accessories")
+    print("=" * 60)
+    accessory_items = fetch_all_accessories(cache)
     onsale_ids      = set(i["id"] for i in accessory_items)
     print(f"[Accessories] {len(accessory_items)} onsale items found\n")
 
@@ -809,7 +921,6 @@ def main():
 
         type_folder = ASSET_TYPE_INFO.get(asset_type, (None, "other"))[1]
         safe_name   = to_snake_case(name) or f"asset_{aid}"
-        # Flat structure: accessories/<type>/<asset_name>/
         folder      = os.path.join(OUTPUT_DIR, "accessories", type_folder, safe_name)
 
         print(f"  [{i}/{len(items)}] [{type_folder}] {name}  (id={aid})")
@@ -820,8 +931,9 @@ def main():
 
     # ── Step 2: Offsale accessories ───────────────────────────
     print("\n" + "=" * 60)
-    print("[Offsale] Fetching offsale accessories ...\n")
-    offsale_items = fetch_offsale_items(onsale_ids)
+    print("STEP 2: Offsale Accessories")
+    print("=" * 60)
+    offsale_items = fetch_offsale_items(onsale_ids, cache)
     print(f"[Offsale] {len(offsale_items)} offsale items to download\n")
 
     for i, item in enumerate(offsale_items, 1):
@@ -845,6 +957,8 @@ def main():
 
     # ── Step 3: Bundles ───────────────────────────────────────
     print("\n" + "=" * 60)
+    print("STEP 3: Bundles")
+    print("=" * 60)
     bundles = fetch_catalog_bundles()
     print(f"[Bundles] {len(bundles)} bundles found\n")
 
@@ -856,7 +970,29 @@ def main():
         print()
         time.sleep(SLEEP_BETWEEN_REQUESTS)
 
+    # ── Step 4: Gears ─────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("STEP 4: Gears")
     print("=" * 60)
+    gear_items = fetch_all_gears(cache)
+    print(f"[Gears] {len(gear_items)} gears to download\n")
+
+    for i, item in enumerate(gear_items, 1):
+        aid       = item.get("id")
+        name      = item.get("name", f"gear_{aid}")
+        safe_name = to_snake_case(name) or f"gear_{aid}"
+        folder    = os.path.join(OUTPUT_DIR, "gear", safe_name)
+
+        if aid in completed:
+            print(f"  [skip {i}/{len(gear_items)}] {name}")
+            continue
+
+        print(f"  [{i}/{len(gear_items)}] [gear] {name}  (id={aid})")
+        if download_and_save(aid, folder, safe_name):
+            mark_done(aid, completed)
+        time.sleep(SLEEP_BETWEEN_REQUESTS)
+
+    print("\n" + "=" * 60)
     print(f"Done! Saved to: {os.path.abspath(OUTPUT_DIR)}")
 
 

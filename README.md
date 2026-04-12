@@ -7,5 +7,20 @@ you can run this system on your computer or on a server but it will take around 
 run eather using `python roblox_asset_downloader.py` or `python3 roblox_asset_downloader.py`.
 for code spaces use `nohup python3 roblox_asset_downloader.py > output.log 2>&1 &`.
 
+you have to set up the cache to download hair accessorys or it will not work. before running type `export ROBLOSECURITY="_|WARNING:-DO-NOT..."`, replace everything inside the "" with your account / alt account cache inside.
+
+to refresh and add new items here are the commands below:
+
+```
+# refresh everything
+python3 roblox_avatar_downloader2.py --refresh-all
+
+# refresh specific sections
+python3 roblox_avatar_downloader2.py --refresh-accessories
+python3 roblox_avatar_downloader2.py --refresh-offsale
+python3 roblox_avatar_downloader2.py --refresh-gears
+python3 roblox_avatar_downloader2.py --refresh-bundles
+```
+
 ## thx for using
 thx for using, i don have it made to download classic faces but you can use ai to explain how it works. please report any issues so i can fix them.
