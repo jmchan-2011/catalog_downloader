@@ -22,5 +22,7 @@ python3 roblox_asset_downloader.py --refresh-gears
 python3 roblox_asset_downloader.py --refresh-bundles
 ```
 
+also it is reconmended to stop the program on codespaces to type this command: `ps aux | grep python`
+
 ## thx for using
 thx for using, i don have it made to download classic faces but you can use ai to explain how it works. please report any issues so i can fix them.

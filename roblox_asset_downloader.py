@@ -314,49 +314,20 @@ def _parse_mesh_binary(data: bytes):
         version = vm.group(1)
         pos     = nl + 1
 
-        if version.startswith("2"):
-            # v2 header layout:
-            #   +0  uint16  sz_header  (size of this header block)
-            #   +2  uint16  sz_vertex  (bytes per vertex, usually 36)
-            #   +4  uint16  sz_face    (bytes per face, usually 12)
-            #   +6  uint32  num_verts
-            #   +10 uint32  num_faces
+        if version.startswith(("2", "3", "4", "5")):
+            # All binary versions share the same header layout:
+            #   +0  uint16  sz_header  (12 for v2, 16 for v3+)
+            #   +2  uint8   sz_vertex  (always 40)
+            #   +3  uint8   sz_lod     (always 12)
+            #   +4  uint32  num_verts
+            #   +8  uint32  num_faces
+            #   face stride is always 12 (3x uint32 indices)
             sz_header = struct.unpack_from("<H", data, pos)[0]
-            sz_vertex = struct.unpack_from("<H", data, pos+2)[0]
-            sz_face   = struct.unpack_from("<H", data, pos+4)[0]
-            num_verts = struct.unpack_from("<I", data, pos+6)[0]
-            num_faces = struct.unpack_from("<I", data, pos+10)[0]
-            vpos = pos + sz_header
-            for i in range(num_verts):
-                base = vpos + i * sz_vertex
-                if base + 28 > len(data): break
-                x, y, z    = struct.unpack_from("<fff", data, base)
-                nx, ny, nz = struct.unpack_from("<fff", data, base+12)
-                u, v       = struct.unpack_from("<ff",  data, base+24)
-                vertices.append((x, y, z))
-                normals.append((nx, ny, nz))
-                uvs.append((u, v))
-            fpos = vpos + num_verts * sz_vertex
-            for i in range(num_faces):
-                base = fpos + i * sz_face
-                if base + 12 > len(data): break
-                a, b, c = struct.unpack_from("<III", data, base)
-                faces.append([(a+1,a+1,a+1),(b+1,b+1,b+1),(c+1,c+1,c+1)])
-
-        elif version.startswith(("3", "4", "5")):
-            # v3+ header layout:
-            #   +0  uint16  sz_header  (always 16)
-            #   +2  uint8   sz_vertex  (always 40 — includes 4-byte tangent)
-            #   +3  uint8   sz_lod     (12)
-            #   +4  uint16  (reserved / num_lods)
-            #   +6  uint16  (reserved)
-            #   +8  uint32  num_verts
-            #   +12 uint32  num_faces
-            sz_header = struct.unpack_from("<H", data, pos)[0]
-            sz_vertex = struct.unpack_from("<B", data, pos+2)[0]   # uint8, not uint16!
-            num_verts = struct.unpack_from("<I", data, pos+8)[0]   # offset +8, not +12
-            num_faces = struct.unpack_from("<I", data, pos+12)[0]  # offset +12, not +16
+            sz_vertex = struct.unpack_from("<B", data, pos+2)[0]
+            num_verts = struct.unpack_from("<I", data, pos+4)[0]
+            num_faces = struct.unpack_from("<I", data, pos+8)[0]
             sz_face   = 12
+
             vpos = pos + sz_header
             for i in range(num_verts):
                 base = vpos + i * sz_vertex
@@ -364,10 +335,11 @@ def _parse_mesh_binary(data: bytes):
                 x, y, z    = struct.unpack_from("<fff", data, base)
                 nx, ny, nz = struct.unpack_from("<fff", data, base+12)
                 u, v       = struct.unpack_from("<ff",  data, base+24)
-                # base+32..+39 = tangent (4 bytes) + bone weights (4 bytes), skipped
+                # base+32..+39 = tangent + bone weights, skipped
                 vertices.append((x, y, z))
                 normals.append((nx, ny, nz))
                 uvs.append((u, v))
+
             fpos = vpos + num_verts * sz_vertex
             for i in range(num_faces):
                 base = fpos + i * sz_face
