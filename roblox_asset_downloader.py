@@ -1,8 +1,8 @@
 """
-Roblox Avatar Asset Downloader & OBJ Converter
+Roblox Asset Downloader & OBJ Converter
 ────────────────────────────────────────────────
 Requirements:  pip3 install requests lz4
-Usage:         python3 roblox_avatar_downloader2.py
+Usage:         python3 roblox_asset_downloader.py
 
 Refresh flags:
   --refresh-all           delete and re-fetch everything

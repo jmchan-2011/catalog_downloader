@@ -13,13 +13,13 @@ to refresh and add new items here are the commands below:
 
 ```
 # refresh everything
-python3 roblox_avatar_downloader2.py --refresh-all
+python3 roblox_asset_downloader.py --refresh-all
 
 # refresh specific sections
-python3 roblox_avatar_downloader2.py --refresh-accessories
-python3 roblox_avatar_downloader2.py --refresh-offsale
-python3 roblox_avatar_downloader2.py --refresh-gears
-python3 roblox_avatar_downloader2.py --refresh-bundles
+python3 roblox_asset_downloader.py --refresh-accessories
+python3 roblox_asset_downloader.py --refresh-offsale
+python3 roblox_asset_downloader.py --refresh-gears
+python3 roblox_asset_downloader.py --refresh-bundles
 ```
 
 ## thx for using
