@@ -315,21 +315,29 @@ def _parse_mesh_binary(data: bytes):
         pos     = nl + 1
 
         if version.startswith(("2", "3", "4", "5")):
-            # Header layout (all versions):
-            #   +0         uint16  sz_header  (12 for v2, 16 for v3+)
-            #   +2         uint8   sz_vertex  (always 40)
-            #   +3         uint8   sz_lod     (always 12)
-            #   [+4..+7]   uint32  extra (v3+ only — num_lods etc)
-            #   sz_header-8  uint32  num_verts
-            #   sz_header-4  uint32  num_faces
-            #   face stride is always 12 (3x uint32 indices)
             sz_header = struct.unpack_from("<H", data, pos)[0]
-            sz_vertex = struct.unpack_from("<B", data, pos+2)[0]
-            num_verts = struct.unpack_from("<I", data, pos + sz_header - 8)[0]
-            num_faces = struct.unpack_from("<I", data, pos + sz_header - 4)[0]
-            sz_face   = 12
+            sz_vertex = 40  # always 40 bytes per vertex across all versions
 
-            vpos = pos + sz_header
+            if sz_header == 24:
+                # v4.01+ layout:
+                #   +0  uint16  sz_header (24)
+                #   +2  uint16  unknown
+                #   +4  uint32  num_verts
+                #   +8  uint32  num_faces
+                #   +12 uint32  num_lods
+                #   +16..+23   padding
+                num_verts = struct.unpack_from("<I", data, pos+4)[0]
+                num_faces = struct.unpack_from("<I", data, pos+8)[0]
+            else:
+                # v2 (sz_header=12) and v3 (sz_header=16):
+                #   num_verts at sz_header-8
+                #   num_faces at sz_header-4
+                num_verts = struct.unpack_from("<I", data, pos + sz_header - 8)[0]
+                num_faces = struct.unpack_from("<I", data, pos + sz_header - 4)[0]
+
+            sz_face = 12
+            vpos    = pos + sz_header
+
             for i in range(num_verts):
                 base = vpos + i * sz_vertex
                 if base + 28 > len(data): break
