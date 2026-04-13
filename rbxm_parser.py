@@ -1,46 +1,42 @@
 """
 Roblox Model (.rbxm) Parser
 Extracts MeshId, TextureId, and Name from SpecialMesh / MeshPart instances.
-
 Supports:
   - Binary .rbxm  (magic: <roblox!)  — post-2015 assets
   - XML .rbxm     (magic: <roblox )  — pre-2015 classic assets
 """
-
 import struct
 import re
 import lz4.block
 from xml.etree import ElementTree as ET
 
-
 # ─────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────
-
 RBXM_MAGIC_BINARY = b"<roblox!"
 RBXM_MAGIC_XML    = b"<roblox "
 MESH_CLASSES      = {"SpecialMesh", "MeshPart", "FileMesh"}
 
-
 # ─────────────────────────────────────────────────────────────
 # ASSET ID EXTRACTOR  (shared by both parsers)
 # ─────────────────────────────────────────────────────────────
-
 def _extract_asset_id(value: str) -> int | None:
     if not value:
         return None
-    m = re.search(r"\d+", value)
-    return int(m.group()) if m else None
-
+    # Handle URLs like https://assetdelivery.roblox.com/v1/?id=12724327580
+    m = re.search(r"[?&]id=(\d+)", value)
+    if m:
+        return int(m.group(1))
+    # Handle rbxassetid://123 or plain numbers (5+ digits to avoid matching version numbers)
+    m = re.search(r"(\d{5,})", value)
+    return int(m.group(1)) if m else None
 
 # ─────────────────────────────────────────────────────────────
 # XML PARSER  (old format — pre-2015)
 # ─────────────────────────────────────────────────────────────
-
 def _parse_xml_rbxm(data: bytes) -> list[dict]:
     """
     Parse old-style XML .rbxm files.
-
     Structure looks like:
       <roblox ...>
         <Item class="Model">
@@ -61,12 +57,10 @@ def _parse_xml_rbxm(data: bytes) -> list[dict]:
         print(f"    [rbxm xml] Parse error: {e}")
         return results
 
-    # Walk every Item element regardless of nesting depth
     for item in root.iter("Item"):
         class_name = item.get("class", "")
         if class_name not in MESH_CLASSES:
             continue
-
         props = item.find("Properties")
         if props is None:
             continue
@@ -77,25 +71,15 @@ def _parse_xml_rbxm(data: bytes) -> list[dict]:
 
         for prop in props:
             prop_name = prop.get("name", "")
-
-            # Name — stored as <string name="Name">
             if prop.tag == "string" and prop_name == "Name":
                 inst_name = prop.text or class_name
-
-            # MeshId / TextureId — stored as:
-            #   <Content name="MeshId"><url>rbxassetid://123</url></Content>
-            # or just:
-            #   <string name="MeshId">rbxassetid://123</string>
             elif prop_name in ("MeshId", "TextureId"):
                 raw_val = ""
-                # Try <url> child first (Content type)
                 url_el = prop.find("url")
                 if url_el is not None and url_el.text:
                     raw_val = url_el.text
-                # Fallback: text directly on the prop element
                 elif prop.text:
                     raw_val = prop.text
-
                 aid = _extract_asset_id(raw_val)
                 if prop_name == "MeshId":
                     mesh_id = aid
@@ -109,66 +93,47 @@ def _parse_xml_rbxm(data: bytes) -> list[dict]:
                 "mesh_id":    mesh_id,
                 "texture_id": texture_id,
             })
-
     return results
-
 
 # ─────────────────────────────────────────────────────────────
 # LOW-LEVEL BINARY CHUNK READER
 # ─────────────────────────────────────────────────────────────
-
 def _decompress_chunk(payload: bytes, decompressed_size: int) -> bytes:
     if decompressed_size == 0:
         return payload
     return lz4.block.decompress(payload, uncompressed_size=decompressed_size)
 
-
 def _read_chunks(data: bytes) -> list[tuple[str, bytes]]:
-    """
-    Parse the top-level chunk list from raw .rbxm binary bytes.
-    Returns list of (chunk_name, decompressed_bytes).
-    """
     if not data.startswith(RBXM_MAGIC_BINARY):
         raise ValueError("Not a valid binary .rbxm file (bad magic bytes)")
-
     offset = 32  # skip 32-byte file header
     chunks = []
-
     while offset < len(data):
         if offset + 16 > len(data):
             break
-
         name_raw    = data[offset:offset + 4]
         comp_size   = struct.unpack_from("<I", data, offset + 4)[0]
         decomp_size = struct.unpack_from("<I", data, offset + 8)[0]
         offset     += 16
-
         payload_size = comp_size if comp_size > 0 else decomp_size
         payload      = data[offset:offset + payload_size]
         offset      += payload_size
-
         try:
             name = name_raw.rstrip(b"\x00").decode("ascii")
         except Exception:
             name = "????"
-
         try:
             body = _decompress_chunk(payload, decomp_size)
         except Exception:
             body = payload
-
         chunks.append((name, body))
-
         if name == "END":
             break
-
     return chunks
-
 
 # ─────────────────────────────────────────────────────────────
 # INTERLEAVED INT32 DECODER
 # ─────────────────────────────────────────────────────────────
-
 def _decode_interleaved_int32(raw: bytes, count: int) -> list[int]:
     if len(raw) < count * 4:
         return []
@@ -183,45 +148,36 @@ def _decode_interleaved_int32(raw: bytes, count: int) -> list[int]:
         result.append(val)
     return result
 
-
 # ─────────────────────────────────────────────────────────────
 # INST CHUNK
 # ─────────────────────────────────────────────────────────────
-
 def _parse_inst_chunk(body: bytes) -> tuple[int, str, list[int]]:
     offset = 0
-
     class_index = struct.unpack_from("<I", body, offset)[0]; offset += 4
     name_len    = struct.unpack_from("<I", body, offset)[0]; offset += 4
     class_name  = body[offset:offset + name_len].decode("utf-8", errors="replace")
     offset     += name_len
     offset     += 1  # is_service bool
     count       = struct.unpack_from("<I", body, offset)[0]; offset += 4
-
-    raw_refs  = body[offset:offset + count * 4]
-    referents = _decode_interleaved_int32(raw_refs, count)
+    raw_refs    = body[offset:offset + count * 4]
+    referents   = _decode_interleaved_int32(raw_refs, count)
     for i in range(1, len(referents)):
         referents[i] += referents[i - 1]  # delta decode
-
     return class_index, class_name, referents
-
 
 # ─────────────────────────────────────────────────────────────
 # PROP CHUNK
 # ─────────────────────────────────────────────────────────────
-
 PROP_TYPE_STRING  = 0x01
 PROP_TYPE_CONTENT = 0x03
 
 def _parse_prop_chunk_strings(body: bytes) -> tuple[int, str, list[str]]:
     offset = 0
-
     class_index = struct.unpack_from("<I", body, offset)[0]; offset += 4
     name_len    = struct.unpack_from("<I", body, offset)[0]; offset += 4
     prop_name   = body[offset:offset + name_len].decode("utf-8", errors="replace")
     offset     += name_len
     prop_type   = body[offset]; offset += 1
-
     values = []
     if prop_type in (PROP_TYPE_STRING, PROP_TYPE_CONTENT):
         while offset < len(body):
@@ -233,14 +189,11 @@ def _parse_prop_chunk_strings(body: bytes) -> tuple[int, str, list[str]]:
             val = body[offset:offset + slen].decode("utf-8", errors="replace")
             offset += slen
             values.append(val)
-
     return class_index, prop_name, values
-
 
 # ─────────────────────────────────────────────────────────────
 # BINARY PARSER
 # ─────────────────────────────────────────────────────────────
-
 def _parse_binary_rbxm(data: bytes) -> list[dict]:
     try:
         chunks = _read_chunks(data)
@@ -286,10 +239,8 @@ def _parse_binary_rbxm(data: bytes) -> list[dict]:
             inst_name = names[i]       if i < len(names)       else cname
             raw_mesh  = mesh_ids[i]    if i < len(mesh_ids)    else ""
             raw_tex   = texture_ids[i] if i < len(texture_ids) else ""
-
-            mesh_aid = _extract_asset_id(raw_mesh)
-            tex_aid  = _extract_asset_id(raw_tex)
-
+            mesh_aid  = _extract_asset_id(raw_mesh)
+            tex_aid   = _extract_asset_id(raw_tex)
             if mesh_aid or tex_aid:
                 results.append({
                     "name":       inst_name,
@@ -297,14 +248,11 @@ def _parse_binary_rbxm(data: bytes) -> list[dict]:
                     "mesh_id":    mesh_aid,
                     "texture_id": tex_aid,
                 })
-
     return results
-
 
 # ─────────────────────────────────────────────────────────────
 # PUBLIC API
 # ─────────────────────────────────────────────────────────────
-
 def extract_mesh_assets(rbxm_bytes: bytes) -> list[dict]:
     """
     Parse a raw .rbxm blob (binary OR xml) and return a list of dicts:
@@ -318,11 +266,8 @@ def extract_mesh_assets(rbxm_bytes: bytes) -> list[dict]:
     """
     if rbxm_bytes[:7] == b"<roblox":
         if rbxm_bytes[:8] == RBXM_MAGIC_BINARY:
-            # New binary format
             return _parse_binary_rbxm(rbxm_bytes)
         else:
-            # Old XML format
             return _parse_xml_rbxm(rbxm_bytes)
-
     print(f"    [rbxm] Unknown format (magic: {rbxm_bytes[:8]!r})")
     return []

@@ -315,17 +315,18 @@ def _parse_mesh_binary(data: bytes):
         pos     = nl + 1
 
         if version.startswith(("2", "3", "4", "5")):
-            # All binary versions share the same header layout:
-            #   +0  uint16  sz_header  (12 for v2, 16 for v3+)
-            #   +2  uint8   sz_vertex  (always 40)
-            #   +3  uint8   sz_lod     (always 12)
-            #   +4  uint32  num_verts
-            #   +8  uint32  num_faces
+            # Header layout (all versions):
+            #   +0         uint16  sz_header  (12 for v2, 16 for v3+)
+            #   +2         uint8   sz_vertex  (always 40)
+            #   +3         uint8   sz_lod     (always 12)
+            #   [+4..+7]   uint32  extra (v3+ only — num_lods etc)
+            #   sz_header-8  uint32  num_verts
+            #   sz_header-4  uint32  num_faces
             #   face stride is always 12 (3x uint32 indices)
             sz_header = struct.unpack_from("<H", data, pos)[0]
             sz_vertex = struct.unpack_from("<B", data, pos+2)[0]
-            num_verts = struct.unpack_from("<I", data, pos+4)[0]
-            num_faces = struct.unpack_from("<I", data, pos+8)[0]
+            num_verts = struct.unpack_from("<I", data, pos + sz_header - 8)[0]
+            num_faces = struct.unpack_from("<I", data, pos + sz_header - 4)[0]
             sz_face   = 12
 
             vpos = pos + sz_header
@@ -878,7 +879,6 @@ def process_bundle(bundle_id: int, bundle_name: str, completed: set, acc_complet
 # ═══════════════════════════════════════════════════════════════
 
 def main():
-    # Create base folders
     for _, folder_name in ASSET_TYPE_INFO.values():
         os.makedirs(os.path.join(OUTPUT_DIR, "accessories", folder_name), exist_ok=True)
     os.makedirs(os.path.join(OUTPUT_DIR, "bundles"), exist_ok=True)
