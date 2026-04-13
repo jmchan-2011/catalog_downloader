@@ -2,7 +2,7 @@
 a simple roblox downloader that only downloads catalog assets created by Roblox.
 
 ## how to use
-you can run this system on your computer or on a server but it will take around 45 min to an hour. it will require python3 and pip3 and you must install lz4 using this command `pip3 install requests lz4`.
+you can run this system on your computer or on a server but it will take around 45 min to an hour. it will require python3 and pip3 and you must install lz4 and DracoPy using these commands: `pip3 install requests lz4`, `pip3 install DracoPy`.
 
 run eather using `python roblox_asset_downloader.py` or `python3 roblox_asset_downloader.py`.
 for code spaces use `nohup python3 roblox_asset_downloader.py > output.log 2>&1 &`.

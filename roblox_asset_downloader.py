@@ -1,7 +1,7 @@
 """
 Roblox Asset Downloader & OBJ Converter
 ────────────────────────────────────────────────
-Requirements:  pip3 install requests lz4
+Requirements:  pip3 install requests lz4 DracoPy
 Usage:         python3 roblox_asset_downloader.py
 
 Refresh flags:
@@ -24,6 +24,14 @@ import struct
 import requests
 from rbxm_parser import extract_mesh_assets
 
+try:
+    import DracoPy
+    DRACO_AVAILABLE = True
+except ImportError:
+    DRACO_AVAILABLE = False
+    print("[Warning] DracoPy not installed - v7 Draco meshes will be skipped.")
+    print("          Run: pip3 install DracoPy\n")
+
 
 # ═══════════════════════════════════════════════════════════════
 # CONFIG
@@ -32,6 +40,7 @@ from rbxm_parser import extract_mesh_assets
 OUTPUT_DIR             = "roblox_assets"
 PROGRESS_FILE          = "progress.json"
 MASTER_CACHE_FILE      = "master_cache.json"
+SKIPPED_FORMATS_FILE   = "skipped_formats.json"
 SLEEP_BETWEEN_REQUESTS = 1.2
 SLEEP_BETWEEN_PASSES   = 15
 SLEEP_ON_RATE_LIMIT    = 60
@@ -157,6 +166,35 @@ if any([REFRESH_ALL, REFRESH_ACCESSORIES, REFRESH_OFFSALE, REFRESH_GEARS, REFRES
     if REFRESH_GEARS:       flags.append("gears")
     if REFRESH_BUNDLES:     flags.append("bundles")
     print(f"[Refresh] Will re-fetch: {', '.join(flags)}\n")
+
+
+# ═══════════════════════════════════════════════════════════════
+# SKIPPED FORMAT LOG
+# ═══════════════════════════════════════════════════════════════
+
+def load_skipped_formats() -> dict:
+    if not os.path.exists(SKIPPED_FORMATS_FILE):
+        return {}
+    try:
+        with open(SKIPPED_FORMATS_FILE, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def log_skipped_format(asset_id: int, mesh_id: int, reason: str, version: str, first_bytes: str):
+    """Log a skipped mesh format for later inspection."""
+    data = load_skipped_formats()
+    key  = str(mesh_id)
+    if key not in data:
+        data[key] = {
+            "mesh_id":    mesh_id,
+            "asset_id":   asset_id,
+            "reason":     reason,
+            "version":    version,
+            "first_bytes": first_bytes,
+        }
+        with open(SKIPPED_FORMATS_FILE, "w") as f:
+            json.dump(data, f, indent=2)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -303,7 +341,82 @@ def _parse_mesh_v1(text: str):
     return vertices, normals, uvs, faces
 
 
-def _parse_mesh_binary(data: bytes):
+def _parse_mesh_v7_draco(data: bytes):
+    """
+    Parse version 7.00 chunk-based Draco-compressed mesh.
+    Format after the version line:
+      COREMESH  (8 bytes tag)
+      uint32    chunk_version
+      uint32    num_verts
+      uint32    num_faces
+      DRACO     (5 bytes tag)
+      ... Draco compressed data follows
+    """
+    vertices, normals, uvs, faces = [], [], [], []
+
+    if not DRACO_AVAILABLE:
+        return vertices, normals, uvs, faces
+
+    try:
+        nl  = data.index(b"\n")
+        pos = nl + 1
+
+        # Verify COREMESH tag
+        if data[pos:pos+8] != b"COREMESH":
+            return vertices, normals, uvs, faces
+        pos += 8
+
+        # Skip chunk_version (4 bytes), num_verts (4), num_faces (4)
+        pos += 12
+
+        # Find DRACO chunk tag
+        draco_pos = data.find(b"DRACO", pos)
+        if draco_pos == -1:
+            return vertices, normals, uvs, faces
+
+        # Skip the DRACO tag (5 bytes) + version/flags (3 bytes)
+        draco_data_start = draco_pos + 5 + 3
+        draco_bytes = data[draco_data_start:]
+
+        mesh = DracoPy.decode(draco_bytes)
+
+        raw_verts = mesh.points
+        raw_faces = mesh.faces
+
+        # Normals and UVs may or may not be present
+        raw_normals = getattr(mesh, "normals", None)
+        raw_uvs     = None
+        if hasattr(mesh, "tex_coord"):
+            raw_uvs = mesh.tex_coord
+
+        for i in range(0, len(raw_verts), 3):
+            vertices.append((raw_verts[i], raw_verts[i+1], raw_verts[i+2]))
+
+        if raw_normals and len(raw_normals) == len(raw_verts):
+            for i in range(0, len(raw_normals), 3):
+                normals.append((raw_normals[i], raw_normals[i+1], raw_normals[i+2]))
+        else:
+            normals = [(0.0, 1.0, 0.0)] * len(vertices)
+
+        if raw_uvs and len(raw_uvs) >= len(vertices) * 2:
+            for i in range(0, len(vertices) * 2, 2):
+                uvs.append((raw_uvs[i], raw_uvs[i+1]))
+        else:
+            uvs = [(0.0, 0.0)] * len(vertices)
+
+        for i in range(0, len(raw_faces), 3):
+            a = raw_faces[i]   + 1
+            b = raw_faces[i+1] + 1
+            c = raw_faces[i+2] + 1
+            faces.append([(a,a,a),(b,b,b),(c,c,c)])
+
+    except Exception as e:
+        print(f"    [mesh v7 draco error] {e}")
+
+    return vertices, normals, uvs, faces
+
+
+def _parse_mesh_binary(data: bytes, asset_id: int = 0, mesh_id: int = 0):
     vertices, normals, uvs, faces = [], [], [], []
     try:
         nl      = data.index(b"\n")
@@ -314,24 +427,19 @@ def _parse_mesh_binary(data: bytes):
         version = vm.group(1)
         pos     = nl + 1
 
-        if version.startswith(("2", "3", "4", "5")):
+        if version.startswith("7"):
+            return _parse_mesh_v7_draco(data)
+
+        elif version.startswith(("2", "3", "4", "5", "6")):
             sz_header = struct.unpack_from("<H", data, pos)[0]
-            sz_vertex = 40  # always 40 bytes per vertex across all versions
+            sz_vertex = 40  # always 40 bytes per vertex
 
             if sz_header == 24:
-                # v4.01+ layout:
-                #   +0  uint16  sz_header (24)
-                #   +2  uint16  unknown
-                #   +4  uint32  num_verts
-                #   +8  uint32  num_faces
-                #   +12 uint32  num_lods
-                #   +16..+23   padding
+                # v4.01+ layout
                 num_verts = struct.unpack_from("<I", data, pos+4)[0]
                 num_faces = struct.unpack_from("<I", data, pos+8)[0]
             else:
-                # v2 (sz_header=12) and v3 (sz_header=16):
-                #   num_verts at sz_header-8
-                #   num_faces at sz_header-4
+                # v2 (sz_header=12) and v3 (sz_header=16)
                 num_verts = struct.unpack_from("<I", data, pos + sz_header - 8)[0]
                 num_faces = struct.unpack_from("<I", data, pos + sz_header - 4)[0]
 
@@ -344,7 +452,6 @@ def _parse_mesh_binary(data: bytes):
                 x, y, z    = struct.unpack_from("<fff", data, base)
                 nx, ny, nz = struct.unpack_from("<fff", data, base+12)
                 u, v       = struct.unpack_from("<ff",  data, base+24)
-                # base+32..+39 = tangent + bone weights, skipped
                 vertices.append((x, y, z))
                 normals.append((nx, ny, nz))
                 uvs.append((u, v))
@@ -356,19 +463,25 @@ def _parse_mesh_binary(data: bytes):
                 a, b, c = struct.unpack_from("<III", data, base)
                 faces.append([(a+1,a+1,a+1),(b+1,b+1,b+1),(c+1,c+1,c+1)])
 
+        else:
+            # Unknown version — log it for later inspection
+            first_bytes = data[:32].hex()
+            print(f"    [SKIP] Unknown mesh version '{version}' for mesh {mesh_id}")
+            log_skipped_format(asset_id, mesh_id, f"unknown_version_{version}", version, first_bytes)
+
     except Exception as e:
         print(f"    [mesh binary error] {e}")
     return vertices, normals, uvs, faces
 
 
-def parse_roblox_mesh(raw: bytes):
+def parse_roblox_mesh(raw: bytes, asset_id: int = 0, mesh_id: int = 0):
     try:
         header = raw[:20].decode("utf-8", errors="ignore")
     except Exception:
         header = ""
     if "version 1" in header:
         return _parse_mesh_v1(raw.decode("utf-8", errors="ignore"))
-    return _parse_mesh_binary(raw)
+    return _parse_mesh_binary(raw, asset_id=asset_id, mesh_id=mesh_id)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -440,8 +553,9 @@ def download_texture(texture_id: int, tex_path: str) -> bool:
     return False
 
 
-def save_mesh_to_folder(mesh_bytes: bytes, texture_id, folder: str, base_name: str) -> bool:
-    vertices, normals, uvs, faces = parse_roblox_mesh(mesh_bytes)
+def save_mesh_to_folder(mesh_bytes: bytes, texture_id, folder: str, base_name: str,
+                        asset_id: int = 0, mesh_id: int = 0) -> bool:
+    vertices, normals, uvs, faces = parse_roblox_mesh(mesh_bytes, asset_id=asset_id, mesh_id=mesh_id)
     if not vertices or not faces:
         return False
     os.makedirs(folder, exist_ok=True)
@@ -490,14 +604,18 @@ def download_and_save(asset_id: int, folder: str, base_name: str, texture_id=Non
             r_mesh = safe_get(mesh_url)
             if r_mesh is None or not r_mesh.ok:
                 continue
-            if save_mesh_to_folder(r_mesh.content, tex_id, folder, part_name):
+            if save_mesh_to_folder(r_mesh.content, tex_id, folder, part_name,
+                                   asset_id=asset_id, mesh_id=mesh_id):
                 saved = True
             time.sleep(SLEEP_BETWEEN_REQUESTS)
         return saved
     elif is_mesh:
-        return save_mesh_to_folder(raw, texture_id, folder, base_name)
+        return save_mesh_to_folder(raw, texture_id, folder, base_name,
+                                   asset_id=asset_id, mesh_id=asset_id)
     else:
+        first_bytes = raw[:32].hex()
         print(f"      [SKIP] Unknown format {asset_id} ({raw[:8]!r})")
+        log_skipped_format(asset_id, asset_id, "unknown_file_format", "", first_bytes)
         return False
 
 
@@ -987,8 +1105,19 @@ def main():
             mark_done(aid, completed)
         time.sleep(SLEEP_BETWEEN_REQUESTS)
 
+    # ── Summary ───────────────────────────────────────────────
     print("\n" + "=" * 60)
     print(f"Done! Saved to: {os.path.abspath(OUTPUT_DIR)}")
+
+    skipped = load_skipped_formats()
+    if skipped:
+        print(f"\n[Skipped] {len(skipped)} unknown mesh formats logged to {SKIPPED_FORMATS_FILE}")
+        versions = {}
+        for v in skipped.values():
+            key = v.get("version") or v.get("reason", "unknown")
+            versions[key] = versions.get(key, 0) + 1
+        for k, count in sorted(versions.items()):
+            print(f"  {k}: {count}")
 
 
 if __name__ == "__main__":
